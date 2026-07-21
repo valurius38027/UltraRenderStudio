@@ -159,5 +159,12 @@ jobs:
               echo '```'
             done
           } > /tmp/probe-report.md
-          gh issue edit "$DIAGNOSTIC_ISSUE" --repo "$GITHUB_REPOSITORY" \
-            --body-file /tmp/probe-report.md
+          jq -Rs '{body: .}' /tmp/probe-report.md > /tmp/probe-payload.json
+          curl -fsSL \
+            -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            --data-binary @/tmp/probe-payload.json \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$DIAGNOSTIC_ISSUE" \
+            >/dev/null
