@@ -1,11 +1,7 @@
 name: Snapshot Main Workflow Status
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/main-status-snapshot.yml
+  workflow_dispatch:
 
 permissions:
   actions: read
