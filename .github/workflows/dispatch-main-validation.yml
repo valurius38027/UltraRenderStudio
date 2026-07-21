@@ -1,4 +1,4 @@
-name: Dispatch Main Validation
+name: Dispatch Main Operations
 
 on:
   issue_comment:
@@ -14,18 +14,34 @@ jobs:
   dispatch:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/run-main-validation'
+      (github.event.comment.body == '/run-main-validation' ||
+       github.event.comment.body == '/snapshot-main-status')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Dispatch validated main workflow
+      - name: Dispatch requested operation
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: "1"
           COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMAND: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          gh workflow run main.yml --repo "$GITHUB_REPOSITORY" --ref main
+          case "$COMMAND" in
+            /run-main-validation)
+              workflow=main.yml
+              operation='main validation'
+              ;;
+            /snapshot-main-status)
+              workflow=main-status-snapshot.yml
+              operation='main status snapshot'
+              ;;
+            *)
+              echo "unsupported command: $COMMAND" >&2
+              exit 2
+              ;;
+          esac
+          gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Accepted explicit main validation request from $COMMENT_URL."
+            --body "Accepted explicit $operation request from $COMMENT_URL."
