@@ -1,0 +1,59 @@
+name: Apply Verified Text Phase Payload
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    if: >-
+      github.event.issue.number == 1 &&
+      github.event.comment.body == '/apply-text-phase-d187f83'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out canonical main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore verified payload and commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAYLOAD_BLOB: 09d858412c93afd10c76ade75f0c4617c68d6609
+          PAYLOAD_SHA256: 001f46a0560ec28ec6b20ef710eca5c1565d6b52fd08c6f7032743d06a2ed86f
+          VERT_SHA256: d7320f79ee44f77d5c1b1f6d48c676e2f760b98fb6397f95ba2282aa751c708d
+          FRAG_SHA256: 896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59
+        run: |
+          set -euo pipefail
+
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/$PAYLOAD_BLOB" --jq .content \
+            | tr -d '\n' | base64 -d > /tmp/payload.tar.xz
+          echo "$PAYLOAD_SHA256  /tmp/payload.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/payload.tar.xz -C .
+
+          rm -f docs/operations/.probe
+
+          git clone --depth 1 https://github.com/valurius38027/toolchain.git /tmp/ultrarender-toolchain
+          sudo bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
+            ultrarender-sdk-debian13-v2026.07.21.1
+
+          bash tools/maintenance/generate_glyph_shaders.sh
+          echo "$VERT_SHA256  libs/ur_gfx/src/shaders/glyph.vert.qsb" | sha256sum -c -
+          echo "$FRAG_SHA256  libs/ur_gfx/src/shaders/glyph.frag.qsb" | sha256sum -c -
+          git diff --check
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: close minimal text rendering and codify operations'
+          git push origin HEAD:main
+
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
+            --body 'Applied the verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, verified their SHA-256 digests, removed the probe file, and pushed the coherent phase commit to `main`.'
