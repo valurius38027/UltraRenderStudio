@@ -16,7 +16,7 @@ jobs:
       (github.event.comment.body == '/run-main-validation' ||
        github.event.comment.body == '/snapshot-main-status' ||
        github.event.comment.body == '/text-import-v2-status' ||
-       github.event.comment.body == '/text-import-v2-context-29846126763')
+       github.event.comment.body == '/text-import-v3-diagnose-29847952960')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,31 +34,17 @@ jobs:
           case "$COMMAND" in
             /snapshot-main-status)
               runs=$(fetch_main_runs)
-              {
-                echo '### Main workflow status snapshot'
-                echo
-                jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"
-              } > /tmp/status.md
+              { echo '### Main workflow status snapshot'; echo; jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"; } > /tmp/status.md
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
             /text-import-v2-status)
               runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=10")
-              {
-                echo '## Text importer v2 status'
-                echo
-                jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"
-              } > /tmp/status.md
+              { echo '## Text importer status'; echo; jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"; } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
-            /text-import-v2-context-29846126763)
-              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/88687059490/logs" > /tmp/job.log
-              {
-                echo '## Text importer v2 focused diagnostic'
-                echo
-                echo '```text'
-                grep -n -B 80 -A 10 'usage: git diff' /tmp/job.log | tail -n 180 || true
-                echo '```'
-              } > /tmp/status.md
+            /text-import-v3-diagnose-29847952960)
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/88693249975/logs" > /tmp/job.log
+              { echo '## Text importer v3 diagnostic'; echo; echo '```text'; tail -n 110 /tmp/job.log; echo '```'; } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
             /run-main-validation)
