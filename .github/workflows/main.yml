@@ -1,0 +1,185 @@
+name: Main Validation and Phase Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ultrarenderstudio-main
+  cancel-in-progress: false
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:13
+    timeout-minutes: 45
+    steps:
+      - name: Bootstrap checkout dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git jq zstd
+
+      - name: Check out UltraRenderStudio
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Check out persistent toolchain
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: valurius38027/toolchain
+          ref: main
+          path: .toolchain
+
+      - name: Restore and verify UltraRender SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .toolchain/profiles/ultrarender/scripts/restore.sh latest \
+            --cache-dir /var/cache/ultrarender-sdk
+
+      - name: GCC strict build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/strict-gcc -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DUR_BUILD_TESTS=ON \
+            -DUR_WARNINGS_AS_ERRORS=ON \
+            -DUR_ENABLE_SANITIZERS=ON
+          cmake --build build/strict-gcc --parallel 2
+
+      - name: GCC tests and editor smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a ctest --test-dir build/strict-gcc \
+            --output-on-failure --no-tests=error
+          LSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/cmake/lsan-vulkan-loader.supp" \
+            xvfb-run -a ./build/strict-gcc/apps/ur_editor/ur_editor --frames 5 \
+            | tee /tmp/editor-smoke.txt
+          grep -Eq 'presented_frames=[1-9][0-9]*' /tmp/editor-smoke.txt
+
+      - name: Clang strict build and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/strict-clang -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DUR_BUILD_TESTS=ON \
+            -DUR_WARNINGS_AS_ERRORS=ON \
+            -DUR_ENABLE_SANITIZERS=OFF
+          cmake --build build/strict-clang --parallel 2
+          xvfb-run -a ctest --test-dir build/strict-clang \
+            --output-on-failure --no-tests=error
+
+      - name: Dependency layering gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 cmake/module_dependency_lint.py --repo-root .
+
+  release-phase:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out validated main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Determine whether phase release is needed
+        id: phase
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          phase=$(tr -d '[:space:]' < PHASE_VERSION)
+          [[ $phase =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          tag="phase/$phase"
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and publish immutable phase bundle
+        if: steps.phase.outputs.needed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.phase.outputs.tag }}
+          PHASE: ${{ steps.phase.outputs.phase }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          bundle="UltraRenderStudio-$PHASE.bundle"
+          sidecar="$bundle.sha256"
+          report="UltraRenderStudio-$PHASE-verification.txt"
+          cleanup() {
+            status=$?
+            if [[ $status -ne 0 ]]; then
+              gh release delete "$TAG" --yes >/dev/null 2>&1 || true
+              git push origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          git tag -a "$TAG" "$GITHUB_SHA" -m "UltraRenderStudio $TAG"
+          git bundle create "$bundle" main "$TAG"
+          git bundle verify "$bundle"
+          sha256sum "$bundle" > "$sidecar"
+
+          rm -rf /tmp/ultrarenderstudio-phase-restore
+          git clone "$bundle" /tmp/ultrarenderstudio-phase-restore
+          git -C /tmp/ultrarenderstudio-phase-restore fsck --full
+          test "$(git -C /tmp/ultrarenderstudio-phase-restore rev-parse "$TAG^{}")" = "$GITHUB_SHA"
+
+          {
+            echo "VERIFICATION_RESULT=PASS"
+            echo "TAG=$TAG"
+            echo "COMMIT=$GITHUB_SHA"
+            echo "TREE=$(git rev-parse "$GITHUB_SHA^{tree}")"
+            echo "BUNDLE_SHA256=$(cut -d' ' -f1 "$sidecar")"
+            echo "GATES=main-validation+git-bundle-verify+fresh-clone+git-fsck+tag-check"
+          } > "$report"
+
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" "$bundle" "$sidecar" "$report" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes "Validated immutable recovery assets for UltraRenderStudio $TAG." \
+            --latest=false
+
+          mkdir remote-roundtrip
+          gh release download "$TAG" \
+            --pattern "$bundle" \
+            --pattern "$sidecar" \
+            --dir remote-roundtrip
+          (cd remote-roundtrip && sha256sum -c "$sidecar")
+          trap - EXIT

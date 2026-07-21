@@ -3,13 +3,14 @@
 - Phase tag: `phase/production-bootstrap-v1.1`
 - Recovery bundle: `UltraRenderStudio-production-bootstrap-v1.1.bundle`
 - Digest sidecar: `UltraRenderStudio-production-bootstrap-v1.1.bundle.sha256`
-- Remote source repository: pending; the attempted encoded bundle vault failed integrity verification and is explicitly non-authoritative.
+- Canonical source repository: `https://github.com/valurius38027/UltraRenderStudio.git`
+- Canonical branch: `main`
 
 ## Included state
 
-The bundle contains the complete repository history, the `main` baseline, the
-`feat/production-bootstrap` completion branch, and every annotated checkpoint tag through
-`phase/production-bootstrap-v1.1`.
+The original recovery bundle contains the complete pre-remote implementation history. The canonical
+GitHub repository now maintains only `main`; durable milestones are represented by annotated
+`phase/*` tags and immutable GitHub Release assets.
 
 The completed phase includes:
 
@@ -52,10 +53,18 @@ sha256sum -c UltraRenderStudio-production-bootstrap-v1.1.bundle.sha256
 
 ```bash
 sha256sum -c UltraRenderStudio-production-bootstrap-v1.1.bundle.sha256
-git clone UltraRenderStudio-production-bootstrap-v1.1.bundle UltraRenderStudio
+git clone https://github.com/valurius38027/UltraRenderStudio.git
 cd UltraRenderStudio
-git switch feat/production-bootstrap
-sudo bash /path/to/toolchain/profiles/ultrarender/scripts/restore.sh latest
+git switch main
+git clone https://github.com/valurius38027/toolchain.git .toolchain
+sudo bash .toolchain/profiles/ultrarender/scripts/restore.sh latest
 ```
 
 After restore, run the GCC and Clang commands in the repository `README.md` before continuing.
+
+## Canonical remote publication
+
+The canonical `main` workflow validates GCC/ASan/UBSan, Clang, CTest, Xvfb/Lavapipe, editor
+smoke, and dependency layering. When `PHASE_VERSION` identifies a phase without an existing tag,
+the workflow creates `phase/<PHASE_VERSION>`, generates a complete bundle, verifies a fresh clone,
+and publishes the bundle, checksum, and verification report as immutable Release assets.

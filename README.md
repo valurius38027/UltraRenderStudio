@@ -63,7 +63,6 @@ cmake -S . -B build/strict-gcc -G Ninja \
   -DUR_ENABLE_SANITIZERS=ON
 cmake --build build/strict-gcc --parallel 2
 
-ASAN_OPTIONS=detect_leaks=0 \
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
   xvfb-run -a ctest --test-dir build/strict-gcc --output-on-failure
 ```
@@ -114,6 +113,13 @@ cmake -S . -B build/strict-gcc -G Ninja \
 
 没有真实引擎库时，前端、窗口、UI 和图形测试仍必须独立通过。
 
+## 仓库与维护策略
+
+权威源码仓库是 `https://github.com/valurius38027/UltraRenderStudio.git`，只维护
+`main`。远端不保留功能、开发或 bundle-vault 分支；隔离开发可以使用本地临时
+worktree，但完成后必须回到 `main` 并清理。仓库自动化规则见 `AGENTS.md`，当前
+代码现实和下一里程碑见 `INDEX.md`。
+
 ## 架构与阶段持久化
 
 架构决策位于 `docs/architecture/`。当前实现入口与后续顺序以 ADR-005、ADR-007
@@ -126,7 +132,7 @@ cmake -S . -B build/strict-gcc -G Ninja \
 3. 生成包含所有 refs 的完整 `git bundle`；
 4. 执行 `git bundle verify`；
 5. 从 bundle 全新 clone 并运行 `git fsck --full`；
-6. 将 bundle 保存到宿主清理范围之外的持久远端或 Release。
+6. 将 bundle、SHA-256 sidecar 和验证报告发布为不可变 GitHub Release。
 
 ## 代码规范
 
@@ -135,3 +141,7 @@ cmake -S . -B build/strict-gcc -G Ninja \
 - 新模块依赖必须同步更新 dependency lint；
 - 改变模块边界、生命周期或输入语义时必须新增或更新 ADR；
 - 不允许用 placeholder smoke 测试宣称模块功能完成。
+
+`PHASE_VERSION` 保存最近完成的阶段名。`main` 上的严格验证通过且对应
+`phase/<PHASE_VERSION>` 尚不存在时，GitHub Actions 会创建注释 tag、完整 Git
+bundle、sidecar、验证报告，并在远端回下载后再次核对 SHA-256。
