@@ -16,7 +16,7 @@ jobs:
       (github.event.comment.body == '/run-main-validation' ||
        github.event.comment.body == '/snapshot-main-status' ||
        github.event.comment.body == '/text-import-v2-status' ||
-       github.event.comment.body == '/text-import-v3-diagnose-29847952960')
+       github.event.comment.body == '/text-import-v4-diagnose-29848907775')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -28,9 +28,7 @@ jobs:
           COMMAND: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          fetch_main_runs() {
-            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&per_page=10"
-          }
+          fetch_main_runs() { gh api "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&per_page=10"; }
           case "$COMMAND" in
             /snapshot-main-status)
               runs=$(fetch_main_runs)
@@ -42,9 +40,9 @@ jobs:
               { echo '## Text importer status'; echo; jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"; } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
-            /text-import-v3-diagnose-29847952960)
-              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/88693249975/logs" > /tmp/job.log
-              { echo '## Text importer v3 diagnostic'; echo; echo '```text'; tail -n 110 /tmp/job.log; echo '```'; } > /tmp/status.md
+            /text-import-v4-diagnose-29848907775)
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/88696467315/logs" > /tmp/job.log
+              { echo '## Text importer v4 diagnostic'; echo; echo '```text'; tail -n 120 /tmp/job.log; echo '```'; } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
             /run-main-validation)
