@@ -13,31 +13,46 @@ jobs:
   report:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/text-import-status'
+      (github.event.comment.body == '/text-import-status' ||
+       startsWith(github.event.comment.body, '/text-import-diagnose '))
     runs-on: ubuntu-latest
     steps:
-      - name: Report importer runs
+      - name: Report importer runs or failure tail
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMAND: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=5")
-          {
-            echo '## Text phase importer status'
-            echo
-            echo '| Run | Commit | Status | Conclusion | Event |'
-            echo '| ---: | --- | --- | --- | --- |'
-            jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' <<< "$runs"
-            latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
-            if [[ -n $latest ]]; then
+          if [[ $COMMAND == '/text-import-status' ]]; then
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=5")
+            {
+              echo '## Text phase importer status'
               echo
-              echo '### Latest jobs'
-              echo
-              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
-                --jq '.jobs[] | "- `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
-            fi
-          } > /tmp/import-status.md
-          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/import-status.md
+              echo '| Run | Commit | Status | Conclusion | Event |'
+              echo '| ---: | --- | --- | --- | --- |'
+              jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' <<< "$runs"
+              latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
+              if [[ -n $latest ]]; then
+                echo
+                echo '### Latest jobs'
+                gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
+                  --jq '.jobs[] | "- `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
+              fi
+            } > /tmp/import-report.md
+          else
+            run_id=${COMMAND#'/text-import-diagnose '}
+            [[ $run_id =~ ^[0-9]+$ ]]
+            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
+            job_id=$(jq -er '.jobs[] | select(.conclusion == "failure") | .id' <<< "$jobs" | head -n 1)
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > /tmp/job.log
+            {
+              printf '## Text importer diagnostic: run `%s`, job `%s`\n\n' "$run_id" "$job_id"
+              echo '```text'
+              tail -n 120 /tmp/job.log
+              echo '```'
+            } > /tmp/import-report.md
+          fi
+          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/import-report.md
 
   apply:
     if: >-
