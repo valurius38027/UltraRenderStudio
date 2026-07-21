@@ -1,0 +1,31 @@
+name: Dispatch Main Validation
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.number == 1 &&
+      github.event.comment.body == '/run-main-validation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch validated main workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: "1"
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+        run: |
+          set -euo pipefail
+          gh workflow run main.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Accepted explicit main validation request from $COMMENT_URL."
