@@ -15,7 +15,8 @@ jobs:
     if: >-
       github.event.issue.number == 1 &&
       (github.event.comment.body == '/run-main-validation' ||
-       github.event.comment.body == '/snapshot-main-status')
+       github.event.comment.body == '/snapshot-main-status' ||
+       startsWith(github.event.comment.body, '/diagnose-main-run '))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -48,6 +49,53 @@ jobs:
               --body-file /tmp/main-status.md
           }
 
+          diagnose_run() {
+            local run_id=$1
+            local jobs failed_count
+            jobs=$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
+            failed_count=$(jq '[.jobs[] | select(.conclusion == "failure")] | length' <<< "$jobs")
+            {
+              printf '### Main workflow diagnostic: run `%s`\n\n' "$run_id"
+              echo '| Job ID | Job | Conclusion |'
+              echo '| ---: | --- | --- |'
+              jq -r '.jobs[] | "| \(.id) | \(.name) | \(.conclusion // .status) |"' <<< "$jobs"
+              echo
+              if [[ $failed_count -eq 0 ]]; then
+                echo 'No failed job is currently available for log extraction.'
+              fi
+            } > /tmp/diagnostic.md
+
+            while IFS=$'\t' read -r job_id job_name; do
+              raw="/tmp/job-$job_id.raw"
+              text="/tmp/job-$job_id.txt"
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > "$raw"
+              if unzip -tqq "$raw" >/dev/null 2>&1; then
+                unzip -p "$raw" > "$text"
+              else
+                cp "$raw" "$text"
+              fi
+              matches="/tmp/job-$job_id.matches"
+              grep -Eai -B 4 -A 14 \
+                'LeakSanitizer|AddressSanitizer|UndefinedBehaviorSanitizer|The following tests FAILED|FAILED|Error:|##\[error\]' \
+                "$text" > "$matches" || true
+              {
+                printf '#### Failed job `%s` (`%s`)\n\n' "$job_name" "$job_id"
+                echo '```text'
+                if [[ -s $matches ]]; then
+                  tail -n 180 "$matches"
+                else
+                  tail -n 140 "$text"
+                fi
+                echo '```'
+                echo
+              } >> /tmp/diagnostic.md
+            done < <(jq -r '.jobs[] | select(.conclusion == "failure") | [.id, .name] | @tsv' <<< "$jobs")
+
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body-file /tmp/diagnostic.md
+          }
+
           case "$COMMAND" in
             /snapshot-main-status)
               publish_snapshot "$(fetch_runs)"
@@ -78,6 +126,11 @@ jobs:
               status=$(jq -r '.status' <<< "$run_json")
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
                 --body "Accepted explicit main validation request from $COMMENT_URL. Run: [$run_id]($run_url), status: \`$status\`."
+              ;;
+            /diagnose-main-run\ *)
+              run_id=${COMMAND#'/diagnose-main-run '}
+              [[ $run_id =~ ^[0-9]+$ ]]
+              diagnose_run "$run_id"
               ;;
             *)
               echo "unsupported command: $COMMAND" >&2
