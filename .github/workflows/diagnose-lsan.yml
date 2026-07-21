@@ -5,63 +5,18 @@ on:
     types: [created]
 
 permissions:
-  actions: read
   contents: write
   issues: write
 
 jobs:
-  report:
-    if: >-
-      github.event.issue.number == 1 &&
-      (github.event.comment.body == '/text-import-status' ||
-       startsWith(github.event.comment.body, '/text-import-diagnose '))
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report importer runs or failure tail
-        env:
-          GH_TOKEN: ${{ github.token }}
-          COMMAND: ${{ github.event.comment.body }}
-        run: |
-          set -euo pipefail
-          if [[ $COMMAND == '/text-import-status' ]]; then
-            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=5")
-            {
-              echo '## Text phase importer status'
-              echo
-              echo '| Run | Commit | Status | Conclusion | Event |'
-              echo '| ---: | --- | --- | --- | --- |'
-              jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' <<< "$runs"
-              latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
-              if [[ -n $latest ]]; then
-                echo
-                echo '### Latest jobs'
-                gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
-                  --jq '.jobs[] | "- `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
-              fi
-            } > /tmp/import-report.md
-          else
-            run_id=${COMMAND#'/text-import-diagnose '}
-            [[ $run_id =~ ^[0-9]+$ ]]
-            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
-            job_id=$(jq -er '.jobs[] | select(.conclusion == "failure") | .id' <<< "$jobs" | head -n 1)
-            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > /tmp/job.log
-            {
-              printf '## Text importer diagnostic: run `%s`, job `%s`\n\n' "$run_id" "$job_id"
-              echo '```text'
-              tail -n 120 /tmp/job.log
-              echo '```'
-            } > /tmp/import-report.md
-          fi
-          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/import-report.md
-
   apply:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/apply-text-phase-d187f83'
+      github.event.comment.body == '/apply-text-phase-v2-7bdf2623'
     runs-on: ubuntu-latest
     container:
       image: debian:13
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Install importer bootstrap
         shell: bash
@@ -82,22 +37,36 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PAYLOAD_SHA256: 001f46a0560ec28ec6b20ef710eca5c1565d6b52fd08c6f7032743d06a2ed86f
+          PAYLOAD_SHA256: 7bdf262368d1827c49aee926e1b425bfd1babc1e718bdb46d462692f9b749e5e
           VERT_SHA256: d7320f79ee44f77d5c1b1f6d48c676e2f760b98fb6397f95ba2282aa751c708d
           FRAG_SHA256: 896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59
         run: |
           set -euo pipefail
           : > /tmp/payload.tar.xz
           for blob in \
-            dc8b415c7761a4bc7ad8a7434906a911cf53be10 \
-            d95ce5b487903f82d86d169f1a6557b26cc16542 \
-            ab9cef107850445cb4e2df2008b7a89b5260ce35 \
-            780e40d83a7423f6e1cd9b4e174910b023ad6e44 \
-            6413a25c39c89b2e18af1fc34a8a238cdd1fcc3b \
-            f50ac255f49e85b9af55cc1fd2fcb00e0b298d99 \
-            a7af479d45e2dd7da93dc909dc75982f19d5f822 \
-            33094680b7e4fd1f28fe3ddc202a471b3dc5486f \
-            de4c332482eac15ac1ace1a020b9cb53c5fe9653; do
+            a666833eda349f51c222160ad94418a1521f4e64 \
+            3bb7f8f0c9914088e7385f25136a00f0fab7b5a5 \
+            a5875c953fb6d8bb7dca766e361f92e1c297b68c \
+            3ba9099f8015575e75ac86db4a8a03bb833797f3 \
+            bbea6c8a8bc537de27223680bfb8c3dbbba87a98 \
+            c471982186d38db39372d9938e5d0f4bb6549be4 \
+            48fc97fb882296f715a2754848dae2169239b95b \
+            654fa3577be309c2c30dc196f8f3dc301a3644e9 \
+            07ff996b2696e3cbf7487b3f2987ddfade46f8b9 \
+            e19d5bb4260042de9335f217d33b3ac8c07ffe58 \
+            757a99cad6ad9a857152fc21b2019c6a61ae5946 \
+            ca032c3c757b8f64385da2cd3fc6cf0e0e376671 \
+            bd08848fe57ab8b1ea3c782f17335a50a5eda055 \
+            9688be5322ef1878ae3805bab645757054861397 \
+            5b37c836ea79cc1550af86b41df5322bfc308897 \
+            73d07d8dcbe622391c0a50c1bce3d3d4d99a5406 \
+            218750f0448b98b5c74df7b4ec2929d175b0fd27 \
+            60895232b8f8a35c2d4903dec64e512304e894b3 \
+            293c0fd8fe3d977d7c04c7e23a2f0416b9e5bc82 \
+            eb7515eb0ef62e690c4bcc953e3b782c12967584 \
+            e7ab77794631f402789e3c83a9a675165af45edf \
+            c60c9707175bd56d51bab3ab9edc3f795aa66f65 \
+            b1c256ee181769f9c8e32f073479cb5a251e62ee; do
             gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content \
               | tr -d '\n' | base64 -d >> /tmp/payload.tar.xz
           done
@@ -117,7 +86,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'feat: close minimal text rendering and codify operations'
+          git commit -m 'feat: close minimal text rendering phase'
           git push origin HEAD:main
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
-            --body 'Applied the verified Minimal Text Rendering payload on Debian 13, regenerated both QShader packages with SDK `2026.07.21.1`, verified all transport and shader digests, removed the probe file, and pushed the coherent phase commit to `main`.'
+            --body 'Applied the checksum-verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, and pushed the coherent phase commit to `main`.'
