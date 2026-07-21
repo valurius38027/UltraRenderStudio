@@ -12,7 +12,7 @@ jobs:
   apply:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/apply-text-phase-v3-7bdf2623'
+      github.event.comment.body == '/apply-text-phase-v4-7bdf2623'
     runs-on: ubuntu-latest
     container:
       image: debian:13
@@ -75,7 +75,7 @@ jobs:
           rm -f "$repo_root/docs/operations/.probe"
 
           git clone --depth 1 https://github.com/valurius38027/toolchain.git /tmp/ultrarender-toolchain
-          bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
+          env -u GITHUB_TOKEN bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
             ultrarender-sdk-debian13-v2026.07.21.1
 
           test -e "$repo_root/.git"
