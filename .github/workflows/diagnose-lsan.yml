@@ -1,4 +1,4 @@
-name: Diagnose Main LeakSanitizer
+name: Diagnose Main Failures
 
 on:
   issue_comment:
@@ -11,7 +11,7 @@ permissions:
   issues: write
 
 jobs:
-  diagnose:
+  diagnose-lsan:
     if: >-
       github.event.issue.number == 1 &&
       startsWith(github.event.comment.body, '/diagnose-lsan-run ')
@@ -79,3 +79,51 @@ jobs:
 
           gh issue edit "$DIAGNOSTIC_ISSUE" --repo "$GITHUB_REPOSITORY" \
             --body-file /tmp/diagnostic-body.md
+
+  diagnose-release:
+    if: >-
+      github.event.issue.number == 1 &&
+      startsWith(github.event.comment.body, '/diagnose-release-run ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Extract phase Release failure tail
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMAND: ${{ github.event.comment.body }}
+          DIAGNOSTIC_ISSUE: "4"
+        run: |
+          set -euo pipefail
+          run_id=${COMMAND#'/diagnose-release-run '}
+          [[ $run_id =~ ^[0-9]+$ ]]
+
+          jobs=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
+          job_id=$(jq -er '.jobs[] | select(.name == "release-phase" and .conclusion == "failure") | .id' \
+            <<< "$jobs" | head -n 1)
+
+          raw=/tmp/job.raw
+          text=/tmp/job.txt
+          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > "$raw"
+          if unzip -tqq "$raw" >/dev/null 2>&1; then
+            unzip -p "$raw" > "$text"
+          else
+            cp "$raw" "$text"
+          fi
+
+          {
+            echo '# CI diagnostic: phase Release'
+            echo
+            printf -- '- Run: `%s`\n' "$run_id"
+            printf -- '- Failed job: `release-phase` (`%s`)\n' "$job_id"
+            echo
+            echo '## Failure tail'
+            echo
+            echo '```text'
+            tail -n 180 "$text" | sed -E 's/^.*Z //'
+            echo '```'
+          } > /tmp/release-diagnostic.md
+
+          gh issue edit "$DIAGNOSTIC_ISSUE" --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/release-diagnostic.md
