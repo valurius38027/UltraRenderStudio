@@ -1,0 +1,21 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+ReferenceAlignment: Left
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"ur/'
+    Priority: 1
+  - Regex: '^<Qt'
+    Priority: 2
+  - Regex: '^<'
+    Priority: 3
+NamespaceIndentation: None
+SpaceAfterTemplateKeyword: false
+Standard: c++20

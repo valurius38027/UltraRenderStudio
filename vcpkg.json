@@ -1,0 +1,22 @@
+{
+  "name": "ultrarender-studio",
+  "version": "0.1.0",
+  "description": "Frontend editor for the UltraRender procedural rendering engine",
+  "builtin-baseline": "2024.12.16",
+  "dependencies": [
+    "freetype",
+    "harfbuzz",
+    "vulkan-headers",
+    "vulkan-loader",
+    "flatbuffers",
+    {
+      "name": "gtest",
+      "features": []
+    }
+  ],
+  "features": {
+    "d3d12-backend": {
+      "description": "Enable D3D12 QRhi backend support on Windows"
+    }
+  }
+}

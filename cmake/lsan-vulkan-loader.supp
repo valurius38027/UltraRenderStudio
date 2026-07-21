@@ -1,0 +1,4 @@
+# Qt's Vulkan window path may leave one process-lifetime Vulkan loader allocation under LSan.
+# Keep the existing sanitizer-runtime suppression used by Qt worker-thread teardown as well.
+leak:asan_thread_start
+leak:libvulkan.so.1
