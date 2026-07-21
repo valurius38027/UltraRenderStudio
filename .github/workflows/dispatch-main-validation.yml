@@ -16,6 +16,7 @@ jobs:
       github.event.issue.number == 1 &&
       (github.event.comment.body == '/run-main-validation' ||
        github.event.comment.body == '/snapshot-main-status' ||
+       github.event.comment.body == '/snapshot-all-workflows' ||
        startsWith(github.event.comment.body, '/diagnose-main-run '))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -25,6 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: "1"
+          SNAPSHOT_ISSUE_NUMBER: "3"
           COMMENT_URL: ${{ github.event.comment.html_url }}
           COMMAND: ${{ github.event.comment.body }}
         run: |
@@ -47,6 +49,21 @@ jobs:
             } > /tmp/main-status.md
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
               --body-file /tmp/main-status.md
+          }
+
+          publish_all_workflows() {
+            local runs
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=50")
+            {
+              echo '# Automation run snapshot'
+              echo
+              echo '| Workflow | Run ID | Commit | Status | Conclusion | Event |'
+              echo '| --- | ---: | --- | --- | --- | --- |'
+              jq -r '.workflow_runs[] | "| \(.name) | [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' \
+                <<< "$runs"
+            } > /tmp/all-workflows.md
+            gh issue edit "$SNAPSHOT_ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body-file /tmp/all-workflows.md
           }
 
           diagnose_run() {
@@ -99,6 +116,9 @@ jobs:
           case "$COMMAND" in
             /snapshot-main-status)
               publish_snapshot "$(fetch_runs)"
+              ;;
+            /snapshot-all-workflows)
+              publish_all_workflows
               ;;
             /run-main-validation)
               before=$(fetch_runs | jq -r '.workflow_runs[0].id // 0')
