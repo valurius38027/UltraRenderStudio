@@ -3,11 +3,60 @@ find_package(Vulkan REQUIRED)
 
 qt6_add_resources(UR_GFX_QRC_SOURCES src/shaders/shaders.qrc)
 
+# Checked-in QShader packages are part of the source authority. Regenerate the
+# glyph shaders with the SDK-pinned qsb and require byte-for-byte identity so
+# source GLSL and committed binaries cannot drift. Existing bootstrap shaders
+# predate this gate and remain a separately tracked migration concern.
+find_program(UR_QSB_EXECUTABLE
+    NAMES qsb
+    HINTS /usr/lib/qt6/bin
+    REQUIRED
+)
+
+set(UR_GLYPH_SHADER_VERIFY_DIR "${CMAKE_CURRENT_BINARY_DIR}/verified-shaders")
+set(UR_GLYPH_VERT_GENERATED "${UR_GLYPH_SHADER_VERIFY_DIR}/glyph.vert.qsb")
+set(UR_GLYPH_FRAG_GENERATED "${UR_GLYPH_SHADER_VERIFY_DIR}/glyph.frag.qsb")
+
+add_custom_command(
+    OUTPUT
+        "${UR_GLYPH_VERT_GENERATED}"
+        "${UR_GLYPH_FRAG_GENERATED}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${UR_GLYPH_SHADER_VERIFY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E env LANG=C.UTF-8 LC_ALL=C.UTF-8
+            "${UR_QSB_EXECUTABLE}"
+            -o "${UR_GLYPH_VERT_GENERATED}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/glyph.vert"
+    COMMAND ${CMAKE_COMMAND} -E env LANG=C.UTF-8 LC_ALL=C.UTF-8
+            "${UR_QSB_EXECUTABLE}"
+            -o "${UR_GLYPH_FRAG_GENERATED}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/glyph.frag"
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            "${UR_GLYPH_VERT_GENERATED}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/glyph.vert.qsb"
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            "${UR_GLYPH_FRAG_GENERATED}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/glyph.frag.qsb"
+    DEPENDS
+        src/shaders/glyph.vert
+        src/shaders/glyph.frag
+        src/shaders/glyph.vert.qsb
+        src/shaders/glyph.frag.qsb
+    COMMENT "Verifying deterministic glyph QShader packages"
+    VERBATIM
+)
+
+add_custom_target(ur_verify_glyph_shaders ALL
+    DEPENDS
+        "${UR_GLYPH_VERT_GENERATED}"
+        "${UR_GLYPH_FRAG_GENERATED}"
+)
+
 add_library(ur_gfx STATIC
     src/vulkan_render_device.cpp
     ${UR_GFX_QRC_SOURCES}
 )
 add_library(ur::gfx ALIAS ur_gfx)
+add_dependencies(ur_gfx ur_verify_glyph_shaders)
 
 target_include_directories(ur_gfx
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

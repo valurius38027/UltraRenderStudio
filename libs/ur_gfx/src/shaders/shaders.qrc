@@ -4,5 +4,7 @@
     <file alias="tri.frag.qsb">tri.frag.qsb</file>
     <file alias="rect.vert.qsb">rect.vert.qsb</file>
     <file alias="rect.frag.qsb">rect.frag.qsb</file>
+    <file alias="glyph.vert.qsb">glyph.vert.qsb</file>
+    <file alias="glyph.frag.qsb">glyph.frag.qsb</file>
   </qresource>
 </RCC>

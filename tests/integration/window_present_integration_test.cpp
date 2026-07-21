@@ -8,6 +8,7 @@
 #include <QThread>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -69,6 +70,42 @@ TEST(WindowPresentIntegrationTest, PresentsAndResizesRealSwapChain) {
     processResizeEvents();
     device->resizeSwapChain();
     EXPECT_EQ(device->presentRects(rects), ur::gfx::PresentResult::Presented);
+}
+
+
+TEST(WindowPresentIntegrationTest, ReusesAtlasUploadAcrossFramesAndResize) {
+    ur::platform::Window window;
+    window.resize({320, 240});
+
+    auto device =
+        ur::gfx::RenderDevice::createForWindow(ur::gfx::Backend::Vulkan, window);
+    ASSERT_NE(device, nullptr);
+
+    window.show();
+    ASSERT_TRUE(waitUntilExposed(window));
+    device->resizeSwapChain();
+
+    const std::array<std::uint8_t, 1U> atlasPixels{255U};
+    ur::gfx::UiFrame frame;
+    frame.alphaAtlas = ur::gfx::AlphaAtlasView{{1U, 1U}, atlasPixels, 1U};
+    frame.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+        20.0F, 20.0F, 80.0F, 40.0F, 0U, 0U, 1U, 1U, 1.0F, 1.0F, 1.0F, 1.0F,
+    });
+
+    EXPECT_EQ(device->presentUiFrame(frame), ur::gfx::PresentResult::Presented);
+    EXPECT_EQ(device->statistics().alphaAtlasUploadCount, 1U);
+    EXPECT_EQ(device->presentUiFrame(frame), ur::gfx::PresentResult::Presented);
+    EXPECT_EQ(device->statistics().alphaAtlasUploadCount, 1U);
+
+    frame.alphaAtlas->revision = 2U;
+    EXPECT_EQ(device->presentUiFrame(frame), ur::gfx::PresentResult::Presented);
+    EXPECT_EQ(device->statistics().alphaAtlasUploadCount, 2U);
+
+    window.resize({480, 320});
+    processResizeEvents();
+    device->resizeSwapChain();
+    EXPECT_EQ(device->presentUiFrame(frame), ur::gfx::PresentResult::Presented);
+    EXPECT_EQ(device->statistics().alphaAtlasUploadCount, 2U);
 }
 
 int main(int argc, char** argv) {

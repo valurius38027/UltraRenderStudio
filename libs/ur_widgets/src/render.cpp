@@ -1,20 +1,52 @@
 #include "ur/widgets/render.hpp"
 
+#include <variant>
+
 namespace ur::widgets {
 
-ur::gfx::FrameReadback renderDrawList(const DrawList& drawList, ur::gfx::RenderDevice& device,
-                                       ur::gfx::Extent2D targetSize) {
-    std::vector<ur::gfx::RectPrimitive> primitives;
-    primitives.reserve(drawList.commands().size());
+ur::gfx::UiFrame buildUiFrame(const DrawList& drawList, ur::text::AtlasView atlas) {
+    ur::gfx::UiFrame frame;
+    frame.alphaAtlas = ur::gfx::AlphaAtlasView{
+        {atlas.width, atlas.height}, atlas.pixels, atlas.revision,
+    };
 
-    for (const RectCommand& cmd : drawList.commands()) {
-        primitives.push_back(ur::gfx::RectPrimitive{
-            cmd.rect.x, cmd.rect.y, cmd.rect.width, cmd.rect.height,
-            cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a,
-        });
+    for (const DrawCommand& command : drawList.commands()) {
+        if (const auto* rect = std::get_if<RectCommand>(&command)) {
+            frame.primitives.emplace_back(ur::gfx::RectPrimitive{
+                rect->rect.x, rect->rect.y, rect->rect.width, rect->rect.height,
+                rect->color.r, rect->color.g, rect->color.b, rect->color.a,
+            });
+            continue;
+        }
+
+        const TextCommand& text = std::get<TextCommand>(command);
+        for (const ur::text::PositionedGlyph& glyph : text.layout.glyphs) {
+            if (glyph.atlasRect.width == 0U || glyph.atlasRect.height == 0U) {
+                continue;
+            }
+            frame.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+                text.originX + glyph.bitmapBounds.x,
+                text.baselineY + glyph.bitmapBounds.y,
+                glyph.bitmapBounds.width,
+                glyph.bitmapBounds.height,
+                glyph.atlasRect.x,
+                glyph.atlasRect.y,
+                glyph.atlasRect.width,
+                glyph.atlasRect.height,
+                text.color.r,
+                text.color.g,
+                text.color.b,
+                text.color.a,
+            });
+        }
     }
+    return frame;
+}
 
-    return device.renderRects(primitives, targetSize);
+ur::gfx::FrameReadback renderDrawList(const DrawList& drawList, ur::text::AtlasView atlas,
+                                       ur::gfx::RenderDevice& device,
+                                       ur::gfx::Extent2D targetSize) {
+    return device.renderUiFrame(buildUiFrame(drawList, atlas), targetSize);
 }
 
 }  // namespace ur::widgets

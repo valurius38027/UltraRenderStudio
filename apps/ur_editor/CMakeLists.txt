@@ -1,12 +1,14 @@
 add_executable(ur_editor
     src/main.cpp
     src/editor_app.cpp
+    src/editor_config.hpp
 )
 
 target_link_libraries(ur_editor
     PRIVATE
     ur::platform
     ur::gfx
+    ur::text
     ur::widgets
 )
 
@@ -25,6 +27,6 @@ ur_apply_sanitizers(ur_editor)
 add_test(NAME ur_editor_smoke COMMAND ur_editor --frames 5)
 set_tests_properties(ur_editor_smoke PROPERTIES
     TIMEOUT 15
-    PASS_REGULAR_EXPRESSION "presented_frames=[1-9][0-9]*"
+    PASS_REGULAR_EXPRESSION "presented_frames=[1-9][0-9]*.*text_glyphs=[1-9][0-9]*.*atlas_revision=[1-9][0-9]*"
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/cmake/lsan-vulkan-loader.supp"
 )

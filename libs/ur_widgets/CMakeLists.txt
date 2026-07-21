@@ -10,7 +10,6 @@ target_include_directories(ur_widgets
 
 target_link_libraries(ur_widgets
     PUBLIC
-    ur::platform
     ur::gfx
     ur::text
 )

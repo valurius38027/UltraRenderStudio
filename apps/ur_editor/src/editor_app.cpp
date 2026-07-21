@@ -1,23 +1,30 @@
 #include "editor_app.hpp"
 
+#include "editor_config.hpp"
 #include "ur/gfx/present.hpp"
 #include "ur/platform/events.hpp"
+#include "ur/widgets/render.hpp"
 
 #include <QCoreApplication>
 #include <QObject>
 
 #include <cstdio>
 #include <exception>
+#include <filesystem>
+#include <variant>
 
 namespace ur::editor {
 namespace {
 
 constexpr ur::widgets::Rect kPrimaryButtonRect{40.0F, 40.0F, 220.0F, 72.0F};
-constexpr std::size_t kPrimaryButtonCommandIndex = 0U;
 
 }  // namespace
 
-EditorApp::EditorApp(std::uint64_t frameLimit) : frameLimit_(frameLimit) {
+EditorApp::EditorApp(std::uint64_t frameLimit)
+    : defaultFont_(textSystem_.loadFont(
+          {std::filesystem::path(config::kDefaultFontPath), config::kDefaultFontPixelSize})),
+      widgets_(textSystem_, defaultFont_),
+      frameLimit_(frameLimit) {
     window_.resize({1280U, 720U});
     device_ = ur::gfx::RenderDevice::createForWindow(ur::gfx::Backend::Vulkan, window_);
 
@@ -52,10 +59,16 @@ void EditorApp::tick() {
             buttonToggled_ = !buttonToggled_;
         }
         const ur::widgets::DrawList& drawList = widgets_.endFrame();
-        const std::vector<ur::gfx::RectPrimitive> primitives = buildFramePrimitives(drawList);
+        ur::gfx::UiFrame frame = buildFrame(drawList);
+        textGlyphs_ = 0U;
+        for (const ur::gfx::UiPrimitive& primitive : frame.primitives) {
+            if (std::holds_alternative<ur::gfx::MaskedQuadPrimitive>(primitive)) {
+                ++textGlyphs_;
+            }
+        }
 
         ++attemptedFrames_;
-        switch (device_->presentRects(primitives)) {
+        switch (device_->presentUiFrame(frame)) {
             case ur::gfx::PresentResult::Presented:
                 ++presentedFrames_;
                 break;
@@ -115,34 +128,31 @@ void EditorApp::finish(int exitCode) {
     }
     finished_ = true;
     frameTimer_.stop();
+    const std::uint64_t atlasRevision = textSystem_.atlas().revision;
     std::printf("UltraRenderStudio summary: attempted_frames=%llu presented_frames=%llu "
-                "button_toggled=%s\n",
+                "button_toggled=%s text_glyphs=%llu atlas_revision=%llu\n",
                 static_cast<unsigned long long>(attemptedFrames_),
                 static_cast<unsigned long long>(presentedFrames_),
-                buttonToggled_ ? "true" : "false");
+                buttonToggled_ ? "true" : "false",
+                static_cast<unsigned long long>(textGlyphs_),
+                static_cast<unsigned long long>(atlasRevision));
     std::fflush(stdout);
     QCoreApplication::exit(exitCode);
 }
 
-std::vector<ur::gfx::RectPrimitive> EditorApp::buildFramePrimitives(
-    const ur::widgets::DrawList& drawList) const {
-    std::vector<ur::gfx::RectPrimitive> primitives;
-    primitives.reserve(drawList.commands().size());
-
+ur::gfx::UiFrame EditorApp::buildFrame(const ur::widgets::DrawList& drawList) const {
+    ur::gfx::UiFrame frame = ur::widgets::buildUiFrame(drawList, textSystem_.atlas());
     const ur::widgets::WidgetId buttonId = ur::widgets::hashLabel("Primary action");
-    for (std::size_t index = 0U; index < drawList.commands().size(); ++index) {
-        const ur::widgets::RectCommand& command = drawList.commands()[index];
-        ur::widgets::Color color = command.color;
-        if (index == kPrimaryButtonCommandIndex && buttonToggled_ && widgets_.hoveredId() != buttonId &&
-            widgets_.activeId() != buttonId) {
-            color = ur::widgets::Color{0.15F, 0.55F, 0.30F, 1.0F};
+    if (buttonToggled_ && widgets_.hoveredId() != buttonId && widgets_.activeId() != buttonId &&
+        !frame.primitives.empty()) {
+        if (auto* background = std::get_if<ur::gfx::RectPrimitive>(&frame.primitives.front())) {
+            background->r = 0.15F;
+            background->g = 0.55F;
+            background->b = 0.30F;
+            background->a = 1.0F;
         }
-        primitives.push_back(ur::gfx::RectPrimitive{
-            command.rect.x, command.rect.y, command.rect.width, command.rect.height,
-            color.r, color.g, color.b, color.a,
-        });
     }
-    return primitives;
+    return frame;
 }
 
 }  // namespace ur::editor

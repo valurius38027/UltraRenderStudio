@@ -1,12 +1,98 @@
 #pragma once
 
-// TODO(ur_text): 占位接口,尚未实现。参考 docs/architecture/ 下对应的 ADR
-// 补充这个模块的真实公开接口设计后再填充。
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <span>
+#include <stdexcept>
+#include <string_view>
+#include <vector>
 
 namespace ur::text {
 
-/// 占位符号,确保这个头文件被 include 时至少有一个可见的声明,
-/// 避免"空头文件"在某些编译器/工具链下被当成异常情况处理。
-constexpr bool kModulePlaceholder = true;
+using FontId = std::uint32_t;
+inline constexpr FontId kInvalidFontId = 0U;
+
+struct AtlasConfig {
+    std::uint32_t width = 1024U;
+    std::uint32_t height = 1024U;
+    std::uint32_t padding = 1U;
+};
+
+struct FontDescriptor {
+    std::filesystem::path filePath;
+    std::uint32_t pixelSize = 16U;
+};
+
+struct TextBounds {
+    float x = 0.0F;
+    float y = 0.0F;
+    float width = 0.0F;
+    float height = 0.0F;
+};
+
+struct TextMetrics {
+    float advanceWidth = 0.0F;
+    float ascender = 0.0F;
+    float descender = 0.0F;
+    float lineHeight = 0.0F;
+    TextBounds inkBounds;
+};
+
+struct AtlasRect {
+    std::uint32_t x = 0U;
+    std::uint32_t y = 0U;
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+};
+
+struct PositionedGlyph {
+    std::uint32_t glyphIndex = 0U;
+    float originX = 0.0F;
+    float originY = 0.0F;
+    float advanceX = 0.0F;
+    float advanceY = 0.0F;
+    TextBounds bitmapBounds;
+    AtlasRect atlasRect;
+};
+
+struct TextLayout {
+    FontId font = kInvalidFontId;
+    std::vector<PositionedGlyph> glyphs;
+    TextMetrics metrics;
+};
+
+struct AtlasView {
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    std::span<const std::uint8_t> pixels;
+    std::uint64_t revision = 0U;
+};
+
+class AtlasFullError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class TextSystem {
+public:
+    explicit TextSystem(AtlasConfig config = {});
+    ~TextSystem();
+
+    TextSystem(const TextSystem&) = delete;
+    TextSystem& operator=(const TextSystem&) = delete;
+    TextSystem(TextSystem&&) noexcept;
+    TextSystem& operator=(TextSystem&&) noexcept;
+
+    [[nodiscard]] FontId loadFont(const FontDescriptor& descriptor);
+    [[nodiscard]] TextLayout shape(FontId font, std::string_view utf8);
+    [[nodiscard]] TextMetrics measure(FontId font, std::string_view utf8);
+    [[nodiscard]] TextLayout prepare(FontId font, std::string_view utf8);
+    [[nodiscard]] AtlasView atlas() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 }  // namespace ur::text

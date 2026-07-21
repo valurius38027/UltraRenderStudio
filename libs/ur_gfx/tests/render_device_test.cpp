@@ -1,6 +1,7 @@
 #include "ur/gfx/render_device.hpp"
 
 #include <QGuiApplication>
+#include <array>
 #include <gtest/gtest.h>
 
 class QtEnvironment : public ::testing::Environment {
@@ -92,6 +93,106 @@ TEST(RenderDeviceTest, RenderRectsDrawsMultipleNonOverlappingRects) {
 
     EXPECT_EQ(pixelAt(frame, 90, 90, 0), 0);  // 绿色矩形内部
     EXPECT_EQ(pixelAt(frame, 90, 90, 1), 255);
+}
+
+TEST(RenderDeviceTest, GenericUiFramePreservesRectanglePixels) {
+    auto device = ur::gfx::RenderDevice::createOffscreen(ur::gfx::Backend::Vulkan);
+    ur::gfx::UiFrame ui;
+    ui.primitives.emplace_back(
+        ur::gfx::RectPrimitive{12.0F, 14.0F, 30.0F, 24.0F, 0.0F, 0.0F, 1.0F, 1.0F});
+
+    const auto frame = device->renderUiFrame(ui, {80U, 80U});
+    EXPECT_EQ(pixelAt(frame, 20U, 20U, 0U), 0U);
+    EXPECT_EQ(pixelAt(frame, 20U, 20U, 1U), 0U);
+    EXPECT_EQ(pixelAt(frame, 20U, 20U, 2U), 255U);
+}
+
+TEST(RenderDeviceTest, GenericUiFrameRejectsInvalidAlphaAtlasContracts) {
+    auto device = ur::gfx::RenderDevice::createOffscreen(ur::gfx::Backend::Vulkan);
+    const ur::gfx::MaskedQuadPrimitive quad{
+        0.0F, 0.0F, 10.0F, 10.0F, 0U, 0U, 2U, 2U, 1.0F, 1.0F, 1.0F, 1.0F,
+    };
+
+    ur::gfx::UiFrame missingAtlas;
+    missingAtlas.primitives.emplace_back(quad);
+    EXPECT_THROW(static_cast<void>(device->renderUiFrame(missingAtlas, {32U, 32U})),
+                 std::invalid_argument);
+
+    const std::array<std::uint8_t, 3U> wrongPixels{255U, 255U, 255U};
+    ur::gfx::UiFrame wrongSize;
+    wrongSize.alphaAtlas = ur::gfx::AlphaAtlasView{{2U, 2U}, wrongPixels, 1U};
+    EXPECT_THROW(static_cast<void>(device->renderUiFrame(wrongSize, {32U, 32U})),
+                 std::invalid_argument);
+
+    const std::array<std::uint8_t, 4U> validPixels{255U, 255U, 255U, 255U};
+    ur::gfx::UiFrame outOfBounds;
+    outOfBounds.alphaAtlas = ur::gfx::AlphaAtlasView{{2U, 2U}, validPixels, 1U};
+    auto outside = quad;
+    outside.atlasX = 1U;
+    outside.atlasWidth = 2U;
+    outOfBounds.primitives.emplace_back(outside);
+    EXPECT_THROW(static_cast<void>(device->renderUiFrame(outOfBounds, {32U, 32U})),
+                 std::invalid_argument);
+}
+
+
+TEST(RenderDeviceTest, MaskedQuadSamplesOpaqueAndTransparentCoverage) {
+    auto device = ur::gfx::RenderDevice::createOffscreen(ur::gfx::Backend::Vulkan);
+
+    const std::array<std::uint8_t, 2U> atlasPixels{255U, 0U};
+    ur::gfx::UiFrame ui;
+    ui.alphaAtlas = ur::gfx::AlphaAtlasView{{2U, 1U}, atlasPixels, 1U};
+    ui.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+        10.0F, 10.0F, 20.0F, 20.0F, 0U, 0U, 1U, 1U, 1.0F, 0.0F, 0.0F, 1.0F,
+    });
+    ui.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+        40.0F, 10.0F, 20.0F, 20.0F, 1U, 0U, 1U, 1U, 0.0F, 1.0F, 0.0F, 1.0F,
+    });
+
+    const auto frame = device->renderUiFrame(ui, {80U, 50U});
+    EXPECT_GT(pixelAt(frame, 20U, 20U, 0U), 245U);
+    EXPECT_LT(pixelAt(frame, 20U, 20U, 1U), 10U);
+    EXPECT_EQ(pixelAt(frame, 50U, 20U, 0U), 20U);
+    EXPECT_EQ(pixelAt(frame, 50U, 20U, 1U), 20U);
+    EXPECT_EQ(pixelAt(frame, 50U, 20U, 2U), 30U);
+    EXPECT_EQ(device->statistics().alphaAtlasUploadCount, 1U);
+}
+
+TEST(RenderDeviceTest, MaskedQuadAppliesTintAndSourceAlpha) {
+    auto device = ur::gfx::RenderDevice::createOffscreen(ur::gfx::Backend::Vulkan);
+
+    const std::array<std::uint8_t, 1U> atlasPixels{255U};
+    ur::gfx::UiFrame ui;
+    ui.alphaAtlas = ur::gfx::AlphaAtlasView{{1U, 1U}, atlasPixels, 7U};
+    ui.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+        8.0F, 8.0F, 24.0F, 24.0F, 0U, 0U, 1U, 1U, 0.0F, 0.0F, 1.0F, 0.5F,
+    });
+
+    const auto frame = device->renderUiFrame(ui, {48U, 48U});
+    EXPECT_NEAR(pixelAt(frame, 16U, 16U, 0U), 10U, 2U);
+    EXPECT_NEAR(pixelAt(frame, 16U, 16U, 1U), 10U, 2U);
+    EXPECT_NEAR(pixelAt(frame, 16U, 16U, 2U), 143U, 3U);
+}
+
+TEST(RenderDeviceTest, GenericUiFramePreservesRectMaskedRectSubmissionOrder) {
+    auto device = ur::gfx::RenderDevice::createOffscreen(ur::gfx::Backend::Vulkan);
+
+    const std::array<std::uint8_t, 1U> atlasPixels{255U};
+    ur::gfx::UiFrame ui;
+    ui.alphaAtlas = ur::gfx::AlphaAtlasView{{1U, 1U}, atlasPixels, 1U};
+    ui.primitives.emplace_back(
+        ur::gfx::RectPrimitive{0.0F, 0.0F, 40.0F, 40.0F, 0.0F, 0.0F, 1.0F, 1.0F});
+    ui.primitives.emplace_back(ur::gfx::MaskedQuadPrimitive{
+        10.0F, 10.0F, 30.0F, 30.0F, 0U, 0U, 1U, 1U, 1.0F, 0.0F, 0.0F, 1.0F,
+    });
+    ui.primitives.emplace_back(
+        ur::gfx::RectPrimitive{20.0F, 20.0F, 20.0F, 20.0F, 0.0F, 1.0F, 0.0F, 1.0F});
+
+    const auto frame = device->renderUiFrame(ui, {50U, 50U});
+    EXPECT_GT(pixelAt(frame, 5U, 5U, 2U), 245U);
+    EXPECT_GT(pixelAt(frame, 15U, 15U, 0U), 245U);
+    EXPECT_GT(pixelAt(frame, 30U, 30U, 1U), 245U);
+    EXPECT_LT(pixelAt(frame, 30U, 30U, 0U), 10U);
 }
 
 int main(int argc, char** argv) {

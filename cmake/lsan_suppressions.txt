@@ -1,18 +1,8 @@
-# LeakSanitizer suppression list. Every entry must have a corresponding ADR
-# explanation. Suppressions are for independently reproduced third-party
-# process-lifetime allocations, never for hiding project-owned leaks.
+# LeakSanitizer suppression list. Every entry must have a corresponding ADR.
+# Suppressions are for independently reproduced third-party process-lifetime
+# allocations, never for hiding project-owned leaks.
 #
-# QGenericUnixServices::QGenericUnixServices:
-# Debian 13's Qt 6 xcb platform creates this process-lifetime services object
-# from a program containing only QGuiApplication. A four-way CI probe showed:
-# qgui_only=1, qgui_vulkan=1, ur_gfx_without_suppression=1, and
-# ur_gfx_targeted_suppression=0. The exact constructor match suppresses the
-# 24-byte root and its QtCore-owned indirect allocations without matching any
-# UltraRenderStudio frame. See ADR-009.
+# Debian 13 Qt xcb platform process-lifetime services object. See ADR-009.
 leak:QGenericUnixServices::QGenericUnixServices
-#
-# asan_thread_start:
-# Mesa llvmpipe background worker/JIT process-lifetime allocations. See ADR-006.
-# This applies only to allocations rooted in the sanitizer worker-thread start
-# path and does not match stacks passing through project symbols.
+# Mesa llvmpipe worker/JIT process-lifetime allocations. See ADR-006.
 leak:asan_thread_start

@@ -2,13 +2,13 @@
 
 #include "ur/gfx/render_device.hpp"
 #include "ur/platform/window.hpp"
+#include "ur/text/text.hpp"
 #include "ur/widgets/context.hpp"
 
 #include <QTimer>
 
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 namespace ur::editor {
 
@@ -26,11 +26,12 @@ private:
     void tick();
     void drainEvents();
     void finish(int exitCode);
-    [[nodiscard]] std::vector<ur::gfx::RectPrimitive> buildFramePrimitives(
-        const ur::widgets::DrawList& drawList) const;
+    [[nodiscard]] ur::gfx::UiFrame buildFrame(const ur::widgets::DrawList& drawList) const;
 
     ur::platform::Window window_;
     std::unique_ptr<ur::gfx::RenderDevice> device_;
+    ur::text::TextSystem textSystem_;
+    ur::text::FontId defaultFont_ = ur::text::kInvalidFontId;
     ur::widgets::Context widgets_;
     QTimer frameTimer_;
 
@@ -44,6 +45,7 @@ private:
     std::uint64_t frameLimit_ = 0U;
     std::uint64_t attemptedFrames_ = 0U;
     std::uint64_t presentedFrames_ = 0U;
+    std::uint64_t textGlyphs_ = 0U;
 };
 
 }  // namespace ur::editor

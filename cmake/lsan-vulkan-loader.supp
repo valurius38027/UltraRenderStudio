@@ -1,8 +1,6 @@
-# Qt xcb platform process-lifetime services object, independently reproduced by
-# a QGuiApplication-only probe on Debian 13. See ADR-009.
+# Qt xcb platform process-lifetime services object. See ADR-009.
 leak:QGenericUnixServices::QGenericUnixServices
 # Mesa/LLVM worker-thread process-lifetime allocations. See ADR-006.
 leak:asan_thread_start
-# Qt's real Vulkan window path may leave one process-lifetime loader allocation.
-# This file is used only by real Vulkan window/editor processes. See ADR-008.
+# Real Vulkan window loader process-lifetime allocation. See ADR-008.
 leak:libvulkan.so.1

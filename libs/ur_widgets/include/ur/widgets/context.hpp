@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ur/text/text.hpp"
 #include "ur/widgets/draw_list.hpp"
 #include "ur/widgets/geometry.hpp"
 
@@ -12,25 +13,15 @@ namespace ur::widgets {
 
 using WidgetId = std::uint64_t;
 
-/// Hashes a label into the current flat widget ID namespace. Scoped IDs are a
-/// later concern; duplicate labels in one frame remain unsupported.
 [[nodiscard]] WidgetId hashLabel(std::string_view label);
 
-/// Immediate-mode widget context with two-stage input resolution. Widgets are
-/// submitted in draw order during the frame; endFrame() resolves the topmost
-/// hover, press ownership, release/click state, and final command colors.
 class Context {
 public:
+    Context(ur::text::TextSystem& textSystem, ur::text::FontId defaultFont);
+
     void beginFrame(float mouseX, float mouseY, bool mouseDown);
     [[nodiscard]] const DrawList& endFrame();
-
-    /// Submits a rectangle button and reports a click resolved by the previous
-    /// endFrame(). This one-frame handoff is required so topmost ownership can
-    /// be decided after every overlapping widget has been submitted.
     bool button(std::string_view label, Rect rect);
-
-    /// Cancels active pointer ownership, for example after focus or capture
-    /// loss from the platform layer.
     void cancelPointerCapture();
 
     [[nodiscard]] bool wasClicked(WidgetId id) const { return clickedId_ == id; }
@@ -39,11 +30,13 @@ public:
 
 private:
     struct Submission {
-        WidgetId id = 0;
+        WidgetId id = 0U;
         Rect rect;
-        std::size_t commandIndex = 0U;
+        std::size_t backgroundCommandIndex = 0U;
     };
 
+    ur::text::TextSystem* textSystem_ = nullptr;
+    ur::text::FontId defaultFont_ = ur::text::kInvalidFontId;
     DrawList drawList_;
     std::vector<Submission> submissions_;
 
@@ -52,9 +45,9 @@ private:
     bool mouseDown_ = false;
     bool prevMouseDown_ = false;
 
-    WidgetId hoveredId_ = 0;
-    WidgetId activeId_ = 0;
-    WidgetId clickedId_ = 0;
+    WidgetId hoveredId_ = 0U;
+    WidgetId activeId_ = 0U;
+    WidgetId clickedId_ = 0U;
 
     [[nodiscard]] bool pressedEdge() const { return mouseDown_ && !prevMouseDown_; }
     [[nodiscard]] bool releasedEdge() const { return !mouseDown_ && prevMouseDown_; }

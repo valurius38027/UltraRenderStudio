@@ -1,3 +1,7 @@
+find_package(Freetype REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
+
 add_library(ur_text STATIC
     src/text.cpp
 )
@@ -8,9 +12,9 @@ target_include_directories(ur_text
 )
 
 target_link_libraries(ur_text
-    PUBLIC
-    ur::platform
-    ur::gfx
+    PRIVATE
+    Freetype::Freetype
+    PkgConfig::HARFBUZZ
 )
 
 ur_set_warnings(ur_text)
@@ -20,5 +24,6 @@ if (UR_BUILD_TESTS)
     add_executable(ur_text_tests tests/text_test.cpp)
     target_link_libraries(ur_text_tests PRIVATE ur::text GTest::gtest GTest::gtest_main)
     ur_set_warnings(ur_text_tests)
+    ur_apply_sanitizers(ur_text_tests)
     add_test(NAME ur_text_tests COMMAND ur_text_tests)
 endif()
