@@ -12,7 +12,7 @@ jobs:
   apply:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/apply-text-phase-v4-7bdf2623'
+      github.event.comment.body == '/apply-text-phase-v5-7bdf2623'
     runs-on: ubuntu-latest
     container:
       image: debian:13
@@ -41,7 +41,10 @@ jobs:
         run: |
           set -euo pipefail
           repo_root=$GITHUB_WORKSPACE
-          test -e "$repo_root/.git"
+          git config --global --add safe.directory "$repo_root"
+          git_dir=$(git -C "$repo_root" rev-parse --absolute-git-dir)
+          test -d "$git_dir"
+
           : > /tmp/payload.tar.xz
           for blob in \
             a666833eda349f51c222160ad94418a1521f4e64 \
@@ -78,16 +81,16 @@ jobs:
           env -u GITHUB_TOKEN bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
             ultrarender-sdk-debian13-v2026.07.21.1
 
-          test -e "$repo_root/.git"
           bash "$repo_root/tools/maintenance/generate_glyph_shaders.sh"
           echo "$VERT_SHA256  $repo_root/libs/ur_gfx/src/shaders/glyph.vert.qsb" | sha256sum -c -
           echo "$FRAG_SHA256  $repo_root/libs/ur_gfx/src/shaders/glyph.frag.qsb" | sha256sum -c -
-          git -C "$repo_root" diff --check
 
-          git -C "$repo_root" config user.name 'github-actions[bot]'
-          git -C "$repo_root" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C "$repo_root" add -A
-          git -C "$repo_root" commit -m 'feat: close minimal text rendering phase'
-          git -C "$repo_root" push origin HEAD:main
+          git --git-dir="$git_dir" --work-tree="$repo_root" diff --check
+          git --git-dir="$git_dir" config user.name 'github-actions[bot]'
+          git --git-dir="$git_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git --git-dir="$git_dir" --work-tree="$repo_root" add -A
+          git --git-dir="$git_dir" --work-tree="$repo_root" commit -m 'feat: close minimal text rendering phase'
+          git --git-dir="$git_dir" --work-tree="$repo_root" push origin HEAD:main
+
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
             --body 'Applied the checksum-verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, and pushed the coherent phase commit to `main`.'
