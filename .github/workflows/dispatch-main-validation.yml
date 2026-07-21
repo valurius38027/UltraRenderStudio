@@ -2,8 +2,7 @@ name: Dispatch Main Operations
 
 on:
   issue_comment:
-    types:
-      - created
+    types: [created]
 
 permissions:
   actions: write
@@ -17,12 +16,11 @@ jobs:
       (github.event.comment.body == '/run-main-validation' ||
        github.event.comment.body == '/snapshot-main-status' ||
        github.event.comment.body == '/text-import-v2-status' ||
-       github.event.comment.body == '/text-import-v2-diagnose-29846126763')
+       github.event.comment.body == '/text-import-v2-context-29846126763')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Dispatch or inspect repository workflows
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: "1"
@@ -30,45 +28,35 @@ jobs:
           COMMAND: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-
           fetch_main_runs() {
             gh api "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&per_page=10"
           }
-
           case "$COMMAND" in
             /snapshot-main-status)
               runs=$(fetch_main_runs)
               {
                 echo '### Main workflow status snapshot'
                 echo
-                echo '| Run ID | Commit | Status | Conclusion | Event |'
-                echo '| ---: | --- | --- | --- | --- |'
-                jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' <<< "$runs"
+                jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"
               } > /tmp/status.md
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
             /text-import-v2-status)
               runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=10")
-              latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
               {
                 echo '## Text importer v2 status'
                 echo
                 jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // "-") at `\(.head_sha)`"' <<< "$runs"
-                if [[ -n $latest ]]; then
-                  echo
-                  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" --jq '.jobs[] | "- job `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
-                fi
               } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
-            /text-import-v2-diagnose-29846126763)
-              job_id=88687059490
-              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > /tmp/job.log
+            /text-import-v2-context-29846126763)
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/88687059490/logs" > /tmp/job.log
               {
-                echo '## Text importer v2 diagnostic'
+                echo '## Text importer v2 focused diagnostic'
                 echo
                 echo '```text'
-                tail -n 140 /tmp/job.log
+                grep -n -B 80 -A 10 'usage: git diff' /tmp/job.log | tail -n 180 || true
                 echo '```'
               } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
