@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - .github/workflows/dispatch-main-validation.yml
+      - .github/workflows/main-status-snapshot.yml
+      - .github/workflows/report-main-status.yml
+      - .github/workflows/diagnose-lsan.yml
+      - .github/workflows/probe-qt-lsan.yml
+      - .github/workflows/snapshot-all-workflows.yml
   workflow_dispatch:
 
 permissions:
