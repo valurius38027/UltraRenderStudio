@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Dispatch requested operation
+      - name: Dispatch or inspect main validation
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -28,20 +28,59 @@ jobs:
           COMMAND: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
+
+          fetch_runs() {
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&per_page=10"
+          }
+
+          publish_snapshot() {
+            local runs=$1
+            {
+              echo '### Main workflow status snapshot'
+              echo
+              echo '| Run ID | Commit | Status | Conclusion | Event |'
+              echo '| ---: | --- | --- | --- | --- |'
+              jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' \
+                <<< "$runs"
+            } > /tmp/main-status.md
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body-file /tmp/main-status.md
+          }
+
           case "$COMMAND" in
-            /run-main-validation)
-              workflow=main.yml
-              operation='main validation'
-              ;;
             /snapshot-main-status)
-              workflow=main-status-snapshot.yml
-              operation='main status snapshot'
+              publish_snapshot "$(fetch_runs)"
+              ;;
+            /run-main-validation)
+              before=$(fetch_runs | jq -r '.workflow_runs[0].id // 0')
+              gh workflow run main.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+              run_json=''
+              for _ in $(seq 1 15); do
+                runs=$(fetch_runs)
+                run_json=$(jq -c --argjson before "$before" \
+                  '.workflow_runs[] | select(.event == "workflow_dispatch" and .id > $before)' \
+                  <<< "$runs" | head -n 1)
+                if [[ -n $run_json ]]; then
+                  break
+                fi
+                sleep 1
+              done
+
+              if [[ -z $run_json ]]; then
+                echo 'workflow dispatch was accepted but the new run was not visible within 15 seconds' >&2
+                exit 1
+              fi
+
+              run_id=$(jq -r '.id' <<< "$run_json")
+              run_url=$(jq -r '.html_url' <<< "$run_json")
+              status=$(jq -r '.status' <<< "$run_json")
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --body "Accepted explicit main validation request from $COMMENT_URL. Run: [$run_id]($run_url), status: \`$status\`."
               ;;
             *)
               echo "unsupported command: $COMMAND" >&2
               exit 2
               ;;
           esac
-          gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Accepted explicit $operation request from $COMMENT_URL."
