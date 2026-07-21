@@ -12,14 +12,13 @@ jobs:
   apply:
     if: >-
       github.event.issue.number == 1 &&
-      github.event.comment.body == '/apply-text-phase-v2-7bdf2623'
+      github.event.comment.body == '/apply-text-phase-v3-7bdf2623'
     runs-on: ubuntu-latest
     container:
       image: debian:13
     timeout-minutes: 35
     steps:
       - name: Install importer bootstrap
-        shell: bash
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
@@ -34,7 +33,6 @@ jobs:
           fetch-depth: 0
 
       - name: Restore verified payload and commit
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PAYLOAD_SHA256: 7bdf262368d1827c49aee926e1b425bfd1babc1e718bdb46d462692f9b749e5e
@@ -42,6 +40,8 @@ jobs:
           FRAG_SHA256: 896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59
         run: |
           set -euo pipefail
+          repo_root=$GITHUB_WORKSPACE
+          test -e "$repo_root/.git"
           : > /tmp/payload.tar.xz
           for blob in \
             a666833eda349f51c222160ad94418a1521f4e64 \
@@ -71,22 +71,23 @@ jobs:
               | tr -d '\n' | base64 -d >> /tmp/payload.tar.xz
           done
           echo "$PAYLOAD_SHA256  /tmp/payload.tar.xz" | sha256sum -c -
-          tar -xJf /tmp/payload.tar.xz -C .
-          rm -f docs/operations/.probe
+          tar -xJf /tmp/payload.tar.xz -C "$repo_root"
+          rm -f "$repo_root/docs/operations/.probe"
 
           git clone --depth 1 https://github.com/valurius38027/toolchain.git /tmp/ultrarender-toolchain
           bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
             ultrarender-sdk-debian13-v2026.07.21.1
 
-          bash tools/maintenance/generate_glyph_shaders.sh
-          echo "$VERT_SHA256  libs/ur_gfx/src/shaders/glyph.vert.qsb" | sha256sum -c -
-          echo "$FRAG_SHA256  libs/ur_gfx/src/shaders/glyph.frag.qsb" | sha256sum -c -
-          git diff --check
+          test -e "$repo_root/.git"
+          bash "$repo_root/tools/maintenance/generate_glyph_shaders.sh"
+          echo "$VERT_SHA256  $repo_root/libs/ur_gfx/src/shaders/glyph.vert.qsb" | sha256sum -c -
+          echo "$FRAG_SHA256  $repo_root/libs/ur_gfx/src/shaders/glyph.frag.qsb" | sha256sum -c -
+          git -C "$repo_root" diff --check
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'feat: close minimal text rendering phase'
-          git push origin HEAD:main
+          git -C "$repo_root" config user.name 'github-actions[bot]'
+          git -C "$repo_root" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$repo_root" add -A
+          git -C "$repo_root" commit -m 'feat: close minimal text rendering phase'
+          git -C "$repo_root" push origin HEAD:main
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
             --body 'Applied the checksum-verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, and pushed the coherent phase commit to `main`.'
