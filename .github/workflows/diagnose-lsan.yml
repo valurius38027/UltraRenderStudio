@@ -5,10 +5,40 @@ on:
     types: [created]
 
 permissions:
+  actions: read
   contents: write
   issues: write
 
 jobs:
+  report:
+    if: >-
+      github.event.issue.number == 1 &&
+      github.event.comment.body == '/text-import-status'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report importer runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=5")
+          {
+            echo '## Text phase importer status'
+            echo
+            echo '| Run | Commit | Status | Conclusion | Event |'
+            echo '| ---: | --- | --- | --- | --- |'
+            jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' <<< "$runs"
+            latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
+            if [[ -n $latest ]]; then
+              echo
+              echo '### Latest jobs'
+              echo
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
+                --jq '.jobs[] | "- `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
+            fi
+          } > /tmp/import-status.md
+          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/import-status.md
+
   apply:
     if: >-
       github.event.issue.number == 1 &&
@@ -32,12 +62,10 @@ jobs:
           FRAG_SHA256: 896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59
         run: |
           set -euo pipefail
-
           gh api "repos/$GITHUB_REPOSITORY/git/blobs/$PAYLOAD_BLOB" --jq .content \
             | tr -d '\n' | base64 -d > /tmp/payload.tar.xz
           echo "$PAYLOAD_SHA256  /tmp/payload.tar.xz" | sha256sum -c -
           tar -xJf /tmp/payload.tar.xz -C .
-
           rm -f docs/operations/.probe
 
           git clone --depth 1 https://github.com/valurius38027/toolchain.git /tmp/ultrarender-toolchain
@@ -54,6 +82,5 @@ jobs:
           git add -A
           git commit -m 'feat: close minimal text rendering and codify operations'
           git push origin HEAD:main
-
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
             --body 'Applied the verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, verified their SHA-256 digests, removed the probe file, and pushed the coherent phase commit to `main`.'
