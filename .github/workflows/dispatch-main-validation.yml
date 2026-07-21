@@ -36,15 +36,24 @@ jobs:
 
           publish_snapshot() {
             local runs=$1
+            local latest
+            latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
             {
-              echo '### Main workflow status snapshot'
+              echo '## Main workflow status ledger'
               echo
               echo '| Run ID | Commit | Status | Conclusion | Event |'
               echo '| ---: | --- | --- | --- | --- |'
               jq -r '.workflow_runs[] | "| [\(.id)](\(.html_url)) | `\(.head_sha)` | \(.status) | \(.conclusion // "-") | \(.event) |"' \
                 <<< "$runs"
+              if [[ -n $latest ]]; then
+                echo
+                echo '### Latest run jobs'
+                echo
+                gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
+                  --jq '.jobs[] | "- `\(.id)` **\(.name)**: \(.status) / \(.conclusion // "-")"'
+              fi
             } > /tmp/main-status.md
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
               --body-file /tmp/main-status.md
           }
 
