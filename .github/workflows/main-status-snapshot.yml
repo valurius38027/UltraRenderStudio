@@ -1,0 +1,36 @@
+name: Temporary Text Import Status
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    if: >-
+      github.event.issue.number == 1 &&
+      github.event.comment.body == '/text-import-v2-status'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report importer status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/diagnose-lsan.yml/runs?branch=main&per_page=5")
+          latest=$(jq -r '.workflow_runs[0].id // empty' <<< "$runs")
+          {
+            echo '## Text importer v2 status'
+            echo
+            jq -r '.workflow_runs[] | "- run `\(.id)`: \(.status) / \(.conclusion // \"-\") at `\(.head_sha)`"' <<< "$runs"
+            if [[ -n $latest ]]; then
+              echo
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" \
+                --jq '.jobs[] | "- job `\(.id)` \(.name): \(.status) / \(.conclusion // \"-\")"'
+            fi
+          } > /tmp/status.md
+          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
