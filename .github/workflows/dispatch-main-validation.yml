@@ -16,7 +16,8 @@ jobs:
       github.event.issue.number == 1 &&
       (github.event.comment.body == '/run-main-validation' ||
        github.event.comment.body == '/snapshot-main-status' ||
-       github.event.comment.body == '/text-import-v2-status')
+       github.event.comment.body == '/text-import-v2-status' ||
+       github.event.comment.body == '/text-import-v2-diagnose-29846126763')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -57,6 +58,18 @@ jobs:
                   echo
                   gh api "repos/$GITHUB_REPOSITORY/actions/runs/$latest/jobs?per_page=100" --jq '.jobs[] | "- job `\(.id)` \(.name): \(.status) / \(.conclusion // "-")"'
                 fi
+              } > /tmp/status.md
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
+              ;;
+            /text-import-v2-diagnose-29846126763)
+              job_id=88687059490
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" > /tmp/job.log
+              {
+                echo '## Text importer v2 diagnostic'
+                echo
+                echo '```text'
+                tail -n 140 /tmp/job.log
+                echo '```'
               } > /tmp/status.md
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
               ;;
