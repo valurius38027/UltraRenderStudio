@@ -1,10 +1,18 @@
-# LeakSanitizer 抑制列表。每一条都必须在 docs/architecture/ 的对应 ADR 里
-# 有解释,不能因为"图省事"加进来 —— 抑制列表是用来精确排除已知的、
-# 排查过的、判断为无害的分配路径,不是用来让 CI 变绿的捷径。
+# LeakSanitizer suppression list. Every entry must have a corresponding ADR
+# explanation. Suppressions are for independently reproduced third-party
+# process-lifetime allocations, never for hiding project-owned leaks.
 #
-# asan_thread_start: Mesa llvmpipe 软件光栅化驱动的后台线程池/LLVM JIT
-# 相关分配,见 docs/architecture/006-qrhi-resource-ownership-leak-fix.md。
-# 这条抑制只匹配"由后台线程启动路径分配、且调用栈完全在无符号驱动代码
-# 里"的泄漏 —— 不会掩盖我们自己代码路径里产生的新泄漏(那些的调用栈
-# 会经过 ur_gfx/ur_platform 等有符号的帧)。
+# QGenericUnixServices::QGenericUnixServices:
+# Debian 13's Qt 6 xcb platform creates this process-lifetime services object
+# from a program containing only QGuiApplication. A four-way CI probe showed:
+# qgui_only=1, qgui_vulkan=1, ur_gfx_without_suppression=1, and
+# ur_gfx_targeted_suppression=0. The exact constructor match suppresses the
+# 24-byte root and its QtCore-owned indirect allocations without matching any
+# UltraRenderStudio frame. See ADR-009.
+leak:QGenericUnixServices::QGenericUnixServices
+#
+# asan_thread_start:
+# Mesa llvmpipe background worker/JIT process-lifetime allocations. See ADR-006.
+# This applies only to allocations rooted in the sanitizer worker-thread start
+# path and does not match stacks passing through project symbols.
 leak:asan_thread_start

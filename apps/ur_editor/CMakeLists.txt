@@ -26,4 +26,5 @@ add_test(NAME ur_editor_smoke COMMAND ur_editor --frames 5)
 set_tests_properties(ur_editor_smoke PROPERTIES
     TIMEOUT 15
     PASS_REGULAR_EXPRESSION "presented_frames=[1-9][0-9]*"
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/cmake/lsan-vulkan-loader.supp"
 )

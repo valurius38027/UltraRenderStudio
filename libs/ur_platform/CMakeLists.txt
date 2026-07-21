@@ -21,4 +21,7 @@ if (UR_BUILD_TESTS)
     target_link_libraries(ur_platform_tests PRIVATE ur::platform GTest::gtest)
     ur_set_warnings(ur_platform_tests)
     add_test(NAME ur_platform_tests COMMAND ur_platform_tests)
+    set_tests_properties(ur_platform_tests PROPERTIES
+        ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/cmake/lsan_suppressions.txt"
+    )
 endif()
