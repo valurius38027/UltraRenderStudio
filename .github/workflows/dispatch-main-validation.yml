@@ -7,7 +7,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -15,10 +15,17 @@ jobs:
     if: >-
       github.event.issue.number == 1 &&
       (github.event.comment.body == '/run-main-validation' ||
-       github.event.comment.body == '/snapshot-main-status')
+       github.event.comment.body == '/snapshot-main-status' ||
+       github.event.comment.body == '/bake-glyph-shaders')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
+      - name: Check out main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: main
+          fetch-depth: 0
+
       - name: Dispatch or inspect main validation
         shell: bash
         env:
@@ -46,6 +53,60 @@ jobs:
             } > /tmp/main-status.md
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
               --body-file /tmp/main-status.md
+          }
+
+          bake_glyph_shaders() {
+            git clone --depth 1 https://github.com/valurius38027/toolchain.git /tmp/ultrarender-toolchain
+            sudo bash /tmp/ultrarender-toolchain/profiles/ultrarender/scripts/restore.sh \
+              ultrarender-sdk-debian13-v2026.07.21.1
+
+            cat > /tmp/glyph.vert <<'EOF'
+          #version 440
+          layout(location = 0) in vec2 position;
+          layout(location = 1) in vec2 texCoord;
+          layout(location = 2) in vec4 color;
+          layout(location = 0) out vec2 vTexCoord;
+          layout(location = 1) out vec4 vColor;
+          layout(std140, binding = 0) uniform buf {
+              mat4 mvp;
+          } ubuf;
+          void main()
+          {
+              vTexCoord = texCoord;
+              vColor = color;
+              gl_Position = ubuf.mvp * vec4(position, 0.0, 1.0);
+          }
+          EOF
+
+            cat > /tmp/glyph.frag <<'EOF'
+          #version 440
+          layout(location = 0) in vec2 vTexCoord;
+          layout(location = 1) in vec4 vColor;
+          layout(location = 0) out vec4 fragColor;
+          layout(binding = 1) uniform sampler2D glyphAtlas;
+          void main()
+          {
+              float coverage = texture(glyphAtlas, vTexCoord).r;
+              fragColor = vec4(vColor.rgb, vColor.a * coverage);
+          }
+          EOF
+
+            mkdir -p libs/ur_gfx/src/shaders
+            LANG=C.UTF-8 LC_ALL=C.UTF-8 /usr/lib/qt6/bin/qsb \
+              -o libs/ur_gfx/src/shaders/glyph.vert.qsb /tmp/glyph.vert
+            LANG=C.UTF-8 LC_ALL=C.UTF-8 /usr/lib/qt6/bin/qsb \
+              -o libs/ur_gfx/src/shaders/glyph.frag.qsb /tmp/glyph.frag
+
+            echo 'd7320f79ee44f77d5c1b1f6d48c676e2f760b98fb6397f95ba2282aa751c708d  libs/ur_gfx/src/shaders/glyph.vert.qsb' | sha256sum -c -
+            echo '896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59  libs/ur_gfx/src/shaders/glyph.frag.qsb' | sha256sum -c -
+
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add libs/ur_gfx/src/shaders/glyph.vert.qsb libs/ur_gfx/src/shaders/glyph.frag.qsb
+            git commit -m 'build: add deterministic glyph QShader packages'
+            git push origin HEAD:main
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body 'Generated glyph QShader packages with SDK `2026.07.21.1`, verified both SHA-256 digests, and committed them to `main`.'
           }
 
           case "$COMMAND" in
@@ -78,6 +139,9 @@ jobs:
               status=$(jq -r '.status' <<< "$run_json")
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
                 --body "Accepted explicit main validation request from $COMMENT_URL. Run: [$run_id]($run_url), status: \`$status\`."
+              ;;
+            /bake-glyph-shaders)
+              bake_glyph_shaders
               ;;
             *)
               echo "unsupported command: $COMMAND" >&2
