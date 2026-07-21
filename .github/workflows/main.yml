@@ -147,11 +147,17 @@ jobs:
           bundle="UltraRenderStudio-$PHASE.bundle"
           sidecar="$bundle.sha256"
           report="UltraRenderStudio-$PHASE-verification.txt"
+          remote_ref_created=false
           cleanup() {
             status=$?
             if [[ $status -ne 0 ]]; then
               gh release delete "$TAG" --yes >/dev/null 2>&1 || true
-              git push origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
+              if [[ $remote_ref_created == true ]]; then
+                encoded_ref=$(jq -rn --arg value "tags/$TAG" '$value | @uri')
+                gh api --method DELETE \
+                  "repos/$GITHUB_REPOSITORY/git/refs/$encoded_ref" \
+                  >/dev/null 2>&1 || true
+              fi
             fi
             exit "$status"
           }
@@ -176,8 +182,45 @@ jobs:
             echo "GATES=main-validation+git-bundle-verify+fresh-clone+git-fsck+tag-check"
           } > "$report"
 
-          git push origin "refs/tags/$TAG"
+          tag_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          jq -n \
+            --arg tag "$TAG" \
+            --arg message "UltraRenderStudio $TAG" \
+            --arg object "$GITHUB_SHA" \
+            --arg date "$tag_date" \
+            '{
+              tag: $tag,
+              message: $message,
+              object: $object,
+              type: "commit",
+              tagger: {
+                name: "github-actions[bot]",
+                email: "41898282+github-actions[bot]@users.noreply.github.com",
+                date: $date
+              }
+            }' > /tmp/tag-object.json
+          remote_tag_sha=$(gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/git/tags" \
+            --input /tmp/tag-object.json \
+            --jq .sha)
+
+          jq -n \
+            --arg ref "refs/tags/$TAG" \
+            --arg sha "$remote_tag_sha" \
+            '{ref: $ref, sha: $sha}' > /tmp/tag-ref.json
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/git/refs" \
+            --input /tmp/tag-ref.json \
+            >/dev/null
+          remote_ref_created=true
+
+          remote_tag_target=$(gh api \
+            "repos/$GITHUB_REPOSITORY/git/tags/$remote_tag_sha" \
+            --jq .object.sha)
+          test "$remote_tag_target" = "$GITHUB_SHA"
+
           gh release create "$TAG" "$bundle" "$sidecar" "$report" \
+            --verify-tag \
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --notes "Validated immutable recovery assets for UltraRenderStudio $TAG." \
