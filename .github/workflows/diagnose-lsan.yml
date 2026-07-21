@@ -70,7 +70,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git jq xz-utils zstd
+            ca-certificates curl gh git jq xz-utils zstd
 
       - name: Check out canonical main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
