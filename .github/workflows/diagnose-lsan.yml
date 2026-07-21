@@ -71,14 +71,25 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PAYLOAD_BLOB: 09d858412c93afd10c76ade75f0c4617c68d6609
           PAYLOAD_SHA256: 001f46a0560ec28ec6b20ef710eca5c1565d6b52fd08c6f7032743d06a2ed86f
           VERT_SHA256: d7320f79ee44f77d5c1b1f6d48c676e2f760b98fb6397f95ba2282aa751c708d
           FRAG_SHA256: 896742f61a4df22510cefdd4ee34b026ae5a1a283012c1df29256a0722a63f59
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/git/blobs/$PAYLOAD_BLOB" --jq .content \
-            | tr -d '\n' | base64 -d > /tmp/payload.tar.xz
+          : > /tmp/payload.tar.xz
+          for blob in \
+            dc8b415c7761a4bc7ad8a7434906a911cf53be10 \
+            d95ce5b487903f82d86d169f1a6557b26cc16542 \
+            ab9cef107850445cb4e2df2008b7a89b5260ce35 \
+            780e40d83a7423f6e1cd9b4e174910b023ad6e44 \
+            6413a25c39c89b2e18af1fc34a8a238cdd1fcc3b \
+            f50ac255f49e85b9af55cc1fd2fcb00e0b298d99 \
+            a7af479d45e2dd7da93dc909dc75982f19d5f822 \
+            33094680b7e4fd1f28fe3ddc202a471b3dc5486f \
+            de4c332482eac15ac1ace1a020b9cb53c5fe9653; do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content \
+              | tr -d '\n' | base64 -d >> /tmp/payload.tar.xz
+          done
           echo "$PAYLOAD_SHA256  /tmp/payload.tar.xz" | sha256sum -c -
           tar -xJf /tmp/payload.tar.xz -C .
           rm -f docs/operations/.probe
@@ -98,4 +109,4 @@ jobs:
           git commit -m 'feat: close minimal text rendering and codify operations'
           git push origin HEAD:main
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" \
-            --body 'Applied the verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, verified their SHA-256 digests, removed the probe file, and pushed the coherent phase commit to `main`.'
+            --body 'Applied the verified Minimal Text Rendering payload, regenerated both QShader packages with SDK `2026.07.21.1`, verified all transport and shader digests, removed the probe file, and pushed the coherent phase commit to `main`.'
